@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<title>Millimetron spacecraft</title>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+	<meta name="apple-mobile-web-app-capable" content="yes">
+	<meta name="mobile-web-app-capable" content="yes">
+	<link rel="apple-touch-icon" href="img/apple-touch-icon.png">	
+	<style>
+	html {
+		background: url(img/Millimetron.jpg) no-repeat center center fixed; 
+		-webkit-background-size: cover;
+		-moz-background-size: cover;
+		-o-background-size: cover;
+		background-size: cover;
+	}
+	body {
+		font-family: Monospace;
+		color: #000;
+		margin: 0px;
+		overflow: hidden;
+	}
+</style>
+</head>
+
+<body>
+	<div id="div_model" style="width:500px; height:400px;">   
+		<button id="butt_fullscreen" onclick="Fullscreen()" style="position:absolute; left:400px; top:30px; display:none; z-index:100;"> fullscreen</button> 
+		<button id="butt_lowdetail" onclick="initialize('data/MM_low.obj');"  style="position:absolute; left:150px; top:350px; display:none" > Low detail </button>
+		<div id="div_loading" style="position:absolute; left:40%; top:50%; z-index:100; font-size:28px; color:#fafafa; display:none " >Loading</div>
+	</div>
+	<button id="butt_highdetail" onclick="initialize('data/MM_high2.obj');"  style="position:absolute; left:45%; bottom:10px" > View </button>
+	<button id="butt_orb" onclick="document.location='webgl_orbit.html'"  style="position:absolute; right:35px; top:20px; width:80px; " > Orbit </button>  
+
+	<script src="js/three.min.js"></script>
+	<script src='js/dat.gui.min.js'></script>
+	<script src="js/Detector.js"></script>
+	<script src="js/OBJLoader.js"></script>   
+
+	<script>
+		document.getElementById("div_model").style.width = window.innerWidth + 'px';
+		document.getElementById("div_model").style.height = window.innerHeight + 'px';
+
+		var container, stats;
+		var camera, scene, renderer;
+		var mouseX = 0, mouseY = 0;
+
+		var windowHalfX = window.innerWidth / 2;
+		var windowHalfY = window.innerHeight / 2;
+
+
+
+		var texture_placeholder,
+		isUserInteracting = false,
+		onMouseDownMouseX = 0, onMouseDownMouseY = 0,
+		lon = 90, onMouseDownLon = 0,
+		lat = 0, onMouseDownLat = 0,
+		phi = 0, theta = 0,
+		target = new THREE.Vector3();     
+
+		var Z_distanse = 5000;
+		var file_name;// = 'data/MM_high.obj';
+		var fullscreen = 0;
+
+
+		function init() {
+			container = document.getElementById( 'div_model' );
+			camera = new THREE.PerspectiveCamera( 45, window.innerWidth / window.innerHeight, 1, 400000 );
+			camera.position.z = 10000;
+			scene = new THREE.Scene();
+			group = new THREE.Object3D();
+			scene.add( group );
+
+			var loader = new THREE.TextureLoader();
+			loader.load( 'img/nebo5.jpg', function ( texture ) {
+				var geometry = new THREE.SphereGeometry( 300000, 25, 25);
+				var material = new THREE.MeshBasicMaterial( { map: texture, overdraw: true } );
+				var mesh = new THREE.Mesh( geometry, material );
+				group.add( mesh );
+				mesh.scale.x = -1;
+			} );
+			scene.children[0].rotation.x = 57.0;
+
+			var ambient = new THREE.AmbientLight( 0x101030 );
+			scene.add( ambient );
+
+			var directionalLight = new THREE.DirectionalLight( 0xffeedd );
+			directionalLight.position.set( -10000, 2000, -10000 );
+			scene.add( directionalLight );
+
+			var directionalLight2 = new THREE.DirectionalLight( 0xffffff );
+			directionalLight2.position.set( 5000, 1000, 1000 );
+			scene.add( directionalLight2 );
+
+			// texture
+
+			var manager = new THREE.LoadingManager();
+			manager.onProgress = function ( item, loaded, total ) {
+				console.log( item, loaded, total );
+			};
+
+			var texture = new THREE.Texture();
+			var loader = new THREE.ImageLoader( manager );
+			loader.load( 'img/texture.png', function ( image ) {
+				texture.image = image;
+				texture.needsUpdate = true;
+			} );
+
+			// model
+
+			var loader = new THREE.OBJLoader( manager );
+			loader.load( file_name, function ( object ) {
+				object.traverse( function ( child ) {
+					if ( child instanceof THREE.Mesh ) {
+						child.material.map = texture;
+					}
+
+				} );
+
+				document.getElementById('butt_fullscreen').style.display='none'
+				document.getElementById('div_loading').style.display='none'
+
+				group.add( object );
+				group.rotation.x = 0.8;
+				group.rotation.z = -0.6;
+
+			} );
+
+			renderer = new THREE.WebGLRenderer();
+			renderer.setSize( window.innerWidth, window.innerHeight );
+
+			container.appendChild( renderer.domElement );
+
+			document.addEventListener( 'mousemove', onDocumentMouseMove, false );
+
+
+			document.getElementById( 'div_model' ).addEventListener( 'mousedown', onDocumentMouseDown, false );
+			document.getElementById( 'div_model' ).addEventListener( 'mousemove', onDocumentMouseMove, false );
+			document.getElementById( 'div_model' ).addEventListener( 'mouseup', onDocumentMouseUp, false );
+			document.getElementById( 'div_model' ).addEventListener( 'mousewheel', onDocumentMouseWheel, false );
+			document.getElementById( 'div_model' ).addEventListener( 'DOMMouseScroll', onDocumentMouseWheel, false );
+
+			document.getElementById( 'div_model' ).addEventListener( 'touchstart', onDocumentTouchStart, false );
+			document.getElementById( 'div_model' ).addEventListener( 'touchmove', onDocumentTouchMove, false );
+
+			window.addEventListener( 'resize', onWindowResize, false );
+		}
+
+		function onWindowResize() {
+			windowHalfX = window.innerWidth / 2;
+			windowHalfY = window.innerHeight / 2;
+			camera.aspect = window.innerWidth / window.innerHeight;
+			camera.updateProjectionMatrix();
+			renderer.setSize( window.innerWidth, window.innerHeight );
+		}
+
+
+		function onDocumentMouseDown( event ) {
+			event.preventDefault();
+			isUserInteracting = true;
+			onPointerDownPointerX = event.clientX;
+			onPointerDownPointerY = event.clientY;
+			onPointerDownLon = lon;
+			onPointerDownLat = lat;
+		}
+
+
+
+		function onDocumentMouseMove( event ) {
+			if ( isUserInteracting === true ) {
+				lon = -( onPointerDownPointerX - event.clientX ) * 0.1 + onPointerDownLon;
+				lat = ( event.clientY - onPointerDownPointerY ) * 0.1 + onPointerDownLat;
+			}
+		}
+
+
+
+		function onDocumentMouseUp( event ) {
+			isUserInteracting = false;
+		}
+
+		function onDocumentMouseWheel( event ) {
+			var delta = 0;
+			if (!event) event = window.event; 
+   			// Установим кроссбраузерную delta
+   			if (event.wheelDelta) {
+       		// IE, Opera, safari, chrome - кратность дельта равна 120
+       		delta = event.wheelDelta/120;
+       	} else if (event.detail) {
+       		// Mozilla, кратность дельта равна 3
+       		delta = -event.detail/3;
+       	}
+       	if (delta) {
+       		// Отменим текущее событие - событие поумолчанию (скролинг окна).
+       		if (event.preventDefault) {
+       			event.preventDefault();
+       		}
+       			event.returnValue = false; // для IE
+       		}
+       		Z_distanse -= delta * 120 * 5.0;
+       		if ((Z_distanse < 15000)&&(Z_distanse > 1000)){
+       		}else{
+       			Z_distanse += delta * 120 * 5.0;   
+       		}
+       	}
+
+
+
+
+       	var touch_scale = 1;
+       	var touch_stat = 0;
+       	var touch_start_Z = 0;
+       	var touch_x1_s= 0;
+       	var touch_y1_s= 0;
+       	var touch_x2_s= 1;
+       	var touch_y2_s= 1;
+       	var touch_x1_f = 0;  
+       	var touch_y1_f = 0;
+       	var touch_x2_f = 1;
+       	var touch_y2_f = 1;
+       	function onDocumentTouchStart( event ) {
+
+       		if ( event.touches.length == 1 ) {
+       			onPointerDownPointerX = event.touches[ 0 ].pageX;
+       			onPointerDownPointerY = event.touches[ 0 ].pageY;
+
+       			onPointerDownLon = lon;
+       			onPointerDownLat = lat;
+       			touch_stat = 0;
+       		}
+       		if ( event.touches.length == 2 ) {
+       			event.preventDefault();
+       			touch_start_Z = Z_distanse;
+       			touch_stat = 1;
+
+       			touch_x1_s = event.touches[ 0 ].pageX;
+       			touch_y1_s = event.touches[ 0 ].pageY;
+       			touch_x2_s = event.touches[ 1 ].pageX;
+       			touch_y2_s = event.touches[ 1 ].pageY;
+       		}
+       	}
+
+       	function onDocumentTouchMove( event ) {
+       		if ( event.touches.length == 1 ) {
+       			event.preventDefault();
+
+       			if (touch_stat == 0){
+       				lon = -( onPointerDownPointerX - event.touches[0].pageX ) * 0.1 + onPointerDownLon;
+       				lat = ( event.touches[0].pageY - onPointerDownPointerY ) * 0.1 + onPointerDownLat;
+       			}else{       
+       				onPointerDownPointerX = event.touches[ 0 ].pageX;
+       				onPointerDownPointerY = event.touches[ 0 ].pageY;
+       				onPointerDownLon = lon;
+       				onPointerDownLat = lat;
+       			}
+       			touch_stat = 0;          			
+       		}
+       		if ( event.touches.length == 2 ) {
+
+       			event.preventDefault();
+       			touch_stat = 1;
+
+       			touch_x1_f = event.touches[ 0 ].pageX;
+       			touch_y1_f = event.touches[ 0 ].pageY;
+       			touch_x2_f = event.touches[ 1 ].pageX;
+       			touch_y2_f = event.touches[ 1 ].pageY;
+
+       			var R1 = Math.sqrt( (touch_x2_s-touch_x1_s)*(touch_x2_s-touch_x1_s)+(touch_y2_s-touch_y1_s)*(touch_y2_s-touch_y1_s));
+       			var R2 = Math.sqrt( (touch_x2_f-touch_x1_f)*(touch_x2_f-touch_x1_f)+(touch_y2_f-touch_y1_f)*(touch_y2_f-touch_y1_f));
+       			if (R2 > 0){
+       				var R_scale = R1 / R2;
+       				var Z = touch_start_Z * R_scale;
+       				if ((Z < 15000)&&(Z > 1000)){
+       					Z_distanse = Z;
+       				}
+       			}
+       			onPointerDownPointerX = event.touches[ 0 ].pageX;
+       			onPointerDownPointerY = event.touches[ 0 ].pageY;
+       			onPointerDownLon = lon;
+       			onPointerDownLat = lat;
+
+       		}
+       	}
+
+
+       	function Fullscreen(){
+       		if (fullscreen == 0){
+       			document.getElementById("div_model").style.width = window.innerWidth + 'px';
+       			document.getElementById("div_model").style.height = window.innerHeight+ 'px';
+       			fullscreen = 1;
+       			document.getElementById("butt_fullscreen").style.left = window.innerWidth*1.0 - 100.0 + 'px';
+       		}else{
+       			document.getElementById("div_model").style.width = '500px';
+       			document.getElementById("div_model").style.height = '400px';
+       			document.getElementById("butt_fullscreen").style.left = '400px';
+       			fullscreen = 0;
+       		}
+       		onWindowResize();
+       	}
+
+       	function initialize(name){
+       		file_name = name;
+       		document.getElementById('butt_lowdetail').style.display='none';
+       		document.getElementById('butt_highdetail').style.display='none';
+       		document.getElementById('div_loading').style.display='block';
+       		if ( Detector.webgl ) {
+       			init();
+       			animate();
+       		} else {
+       			document.getElementById("div_model").appendChild( Detector.getWebGLErrorMessage() );
+       		}
+       	}
+
+       	function animate() {
+       		requestAnimationFrame( animate );
+       		render();
+       	}
+
+       	function render() {
+       		lat = Math.max( - 85, Math.min( 85, lat ) );
+       		phi = THREE.Math.degToRad( 90 - lat );
+       		theta = THREE.Math.degToRad( lon );
+
+       		camera.position.x = Z_distanse * Math.sin( phi ) * Math.cos( theta );
+       		camera.position.y = Z_distanse * Math.cos( phi );
+       		camera.position.z = Z_distanse * Math.sin( phi ) * Math.sin( theta );
+
+       		target.x = 0;
+       		target.y = 0;
+       		target.z = 0;
+
+       		camera.lookAt( target );   
+
+       		renderer.render( scene, camera );
+       	}
+
+       	initialize('data/MM_high2.obj');
+
+       </script>
+
+   </body>
+   </html>

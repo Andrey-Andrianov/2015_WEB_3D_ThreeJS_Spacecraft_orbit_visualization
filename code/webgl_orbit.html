@@ -1,0 +1,697 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+  <title>Millimetron orbit</title>
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <link rel="apple-touch-icon" href="img/apple-touch-icon.png">
+
+  <script language="javascript" type="text/javascript" src="js/jquery.min.js"></script> 
+  <script src="js/three.min.js"></script>
+
+  <script src='js/dat.gui.min.js'></script>
+  <script src="js/Detector.js"></script>
+  <script src='js/threex.text.js'></script> 
+
+  <script src="js/droid_serif_bold.typeface.js"></script>
+
+  <style>
+  html {
+    background: url(img/orbit.jpg) no-repeat center center fixed; 
+    -webkit-background-size: cover;
+    -moz-background-size: cover;
+    -o-background-size: cover;
+    background-size: cover;
+  }
+  body {
+    font-family: Monospace;
+    color: #000;
+    margin: 0px;
+    overflow: hidden;
+  }
+</style>
+</head>
+<body>
+  <div id="div_mode_view_3d" style="width:100px; ">  
+    <div id="div_loading" style="position:absolute; left:40%; top:50%; z-index:100; font-size:28px; color:#fafafa; display:none " >Loading</div>
+  </div>
+  <button id="butt_view" onclick="initialize();"  style="position:absolute; left:45%; bottom:10px" > View </button>  
+  <button id="butt_orb" onclick="butt_orb_click();"  style="position:absolute; right:35px; top:20px; width:80px; display:none" > Coord </button>  
+  <button id="butt_labels" onclick="butt_labels_click();"  style="position:absolute; right:35px; top:60px; width:80px; display:none" > Labels </button>  
+  <button id="butt_orb" onclick="document.location='webgl_mm_model.html'"  style="position:absolute; right:35px; top:100px; width:80px; " > Spacecraft </button>  
+</body>
+
+<script>
+  document.getElementById("div_mode_view_3d").style.width = window.innerWidth + 'px';
+  document.getElementById("div_mode_view_3d").style.height = window.innerHeight + 'px';
+  var container, stats;
+  var camera, scene, renderer;
+  var group;
+  var group_rest;
+  var group_orbit;
+  var obj_earth, obj_sun, obj_sky, obj_sattelite, obj_l2, obj_moon, obj_gamma;
+
+  var scene_model, camera_model;
+
+  var windowHalfX = window.innerWidth / 2;
+  var windowHalfY = window.innerHeight / 2;
+
+
+  var texture_placeholder,
+  isUserInteracting = false,
+  onMouseDownMouseX = 0, onMouseDownMouseY = 0,
+  lon = 90, onMouseDownLon = 0,
+  lat = 0, onMouseDownLat = 0,
+  phi = 0, theta = 0,
+  target = new THREE.Vector3();     
+
+  var Z_distanse = 50;
+
+  var MM_orbit;
+  var MM_orbit_1;
+  var MM_orbit_2;
+  var MM_animate_phase = 0;
+
+  var MM_orbit_coord = 0;
+  var MM_orbit_labels = 1;
+
+  var main_Time = 0.0;
+  var SunX = -1;
+  var SunY = 1;
+  var SunZ = 0.1;
+
+  function initialize(){
+    if ( Detector.webgl ) {
+      document.getElementById('div_mode_view_3d').style.display='block';
+      document.getElementById('butt_view').style.display='none';
+      document.getElementById('div_loading').style.display='block';
+      init_3d();
+      animate();
+    } else {
+      document.getElementById('div_mode_view_3d').style.display='block';
+      document.getElementById("div_mode_view_3d").appendChild( Detector.getWebGLErrorMessage() );
+    }
+  }
+
+  function butt_orb_click(){
+    if ( MM_orbit_coord == 0 ) {
+      MM_orbit_coord = 1;
+            MM_orbit = MM_orbit_2;//2
+          } else {
+            MM_orbit_coord = 0;
+            MM_orbit = MM_orbit_1;
+          }
+          change_time_range();
+        }
+
+        function butt_labels_click(){
+          if ( MM_orbit_labels == 0 ) {
+            MM_orbit_labels = 1;
+          } else {
+            MM_orbit_labels = 0;
+          }
+          add_labels();
+        }
+
+        function ajaxDataOrbit() {
+          $.ajax({
+            async: false,
+            url: 'data/orbit.txt',
+            dataType:"json",
+            success: function(data, options) {
+              MM_orbit_1 = data;
+              $.ajax({
+                async: false,
+                url: 'data/orbit_l2.txt',
+                dataType:"json",
+                success: function(data, options) {
+                  MM_orbit_2 = data;
+                  MM_orbit = MM_orbit_1;
+                },
+                failure: function(response, options){
+                  alert('error');
+                }
+              });
+
+            },
+            failure: function(response, options){
+              alert('error');
+            }
+          });
+        };      
+
+        var line;
+
+        function change_time_range(){
+          group_orbit.remove(line);
+          var lines_geometry = new THREE.Geometry();
+          var t_start_orb = 0;
+          var t_stop_orb = 1500;
+
+          for ( var i =  t_start_orb; i <  t_stop_orb; i ++ ) {
+            var particle;
+            particle = new THREE.Sprite( );
+            particle.position.x = MM_orbit[i][1] / 100000.0;
+            particle.position.y = MM_orbit[i][3] / 100000.0;
+            particle.position.z = MM_orbit[i][2] / 100000.0;
+            lines_geometry.vertices.push( particle.position );
+          }
+
+        // lines
+
+        line = new THREE.Line( lines_geometry, new THREE.LineBasicMaterial( { color: 0xffff00, opacity: 0.2 } ) );
+
+        group_orbit.add( line );    
+      }    
+
+      var line_labels;
+      var line_labels_2;
+      var line_labels_3;
+      var obj_ekv_t_2;
+      var obj_ecl_t_2;
+      var obj_mw_t_2;
+
+      function add_labels(){
+        group_rest.remove(line_labels);
+        group_rest.remove(line_labels_2);
+        group_rest.remove(line_labels_3);
+        group_rest.remove(obj_ekv_t_2);
+        group_rest.remove(obj_ecl_t_2);
+        group_rest.remove(obj_mw_t_2);
+
+        group_rest.remove( obj_gamma );
+
+        if (MM_orbit_labels == 0) {
+
+          group_rest.add( obj_gamma );
+
+          var lines_geometry = new THREE.Geometry();
+          var particle;
+          particle = new THREE.Sprite( );
+          particle.position.x = -16000; particle.position.y = 0; particle.position.z = -16000;
+          lines_geometry.vertices.push( particle.position );
+          particle = new THREE.Sprite( );
+          particle.position.x = 16000; particle.position.y = 0; particle.position.z = -16000;
+          lines_geometry.vertices.push( particle.position );
+          particle = new THREE.Sprite( );
+          particle.position.x = 16000; particle.position.y = 0; particle.position.z = 16000;
+          lines_geometry.vertices.push( particle.position );
+          particle = new THREE.Sprite( );
+          particle.position.x = -16000; particle.position.y = 0; particle.position.z = 16000;
+          lines_geometry.vertices.push( particle.position );
+          particle = new THREE.Sprite( );
+          particle.position.x = -16000; particle.position.y = 0; particle.position.z = -16000;
+          lines_geometry.vertices.push( particle.position );
+          line_labels = new THREE.Line( lines_geometry, new THREE.LineBasicMaterial( { color: 0x00ffff, opacity: 0.2 } ) );
+          group_rest.add( line_labels );    
+
+          var obj_ekv_t = new THREE.Object3D();
+          obj_ekv_t_2 = new THREE.Object3D();
+          var mesh_t   = new THREEx.Text('Celestial equator', {
+            font        : "droid serif",
+            weight      : "bold",
+            size        : 1000,
+            height      : 0.4,
+          })
+          obj_ekv_t.add(mesh_t);
+          obj_ekv_t.position.y = 1000;
+          obj_ekv_t.position.z = -16000.0;
+          obj_ekv_t_2.add(obj_ekv_t);
+          obj_ekv_t_2.rotation.y = -0.7;
+          group_rest.add(obj_ekv_t_2);
+
+
+
+          var lines_geometry_2 = new THREE.Geometry();
+          particle = new THREE.Sprite( );
+          particle.position.x = -16000; particle.position.y = 0; particle.position.z = -16000;
+          lines_geometry_2.vertices.push( particle.position );
+          particle = new THREE.Sprite( );
+          particle.position.x = 16000; particle.position.y = 0; particle.position.z = -16000;
+          lines_geometry_2.vertices.push( particle.position );
+          particle = new THREE.Sprite( );
+          particle.position.x = 16000; particle.position.y = 0; particle.position.z = 16000;
+          lines_geometry_2.vertices.push( particle.position );
+          particle = new THREE.Sprite( );
+          particle.position.x = -16000; particle.position.y = 0; particle.position.z = 16000;
+          lines_geometry_2.vertices.push( particle.position );
+          particle = new THREE.Sprite( );
+          particle.position.x = -16000; particle.position.y = 0; particle.position.z = -16000;
+          lines_geometry_2.vertices.push( particle.position );
+          line_labels_2 = new THREE.Line( lines_geometry_2, new THREE.LineBasicMaterial( { color: 0xff0000, opacity: 0.2 } ) );
+          line_labels_2.rotation.x = 23.5/180.0*Math.PI;
+          group_rest.add( line_labels_2 );    
+
+          var obj_ecl_t = new THREE.Object3D();
+          obj_ecl_t_2 = new THREE.Object3D();
+          var mesh_t   = new THREEx.Text('Ecliptic', {
+            font        : "droid serif",
+            weight      : "bold",
+            size        : 1000,
+            height      : 0.4,
+          })
+          obj_ecl_t.add(mesh_t);
+          obj_ecl_t.position.y = 1000;
+          obj_ecl_t.position.z = -16000.0;
+          obj_ecl_t_2.add(obj_ecl_t);
+          obj_ecl_t_2.rotation.y = -0.7;
+          obj_ecl_t_2.rotation.x = 23.5/180.0*Math.PI;
+          group_rest.add(obj_ecl_t_2);
+
+          var lines_geometry_3 = new THREE.Geometry();
+    //        var particle;
+    particle = new THREE.Sprite( );
+    particle.position.x = -16000; particle.position.y = 0; particle.position.z = -16000;
+    lines_geometry_3.vertices.push( particle.position );
+    particle = new THREE.Sprite( );
+    particle.position.x = 16000; particle.position.y = 0; particle.position.z = -16000;
+    lines_geometry_3.vertices.push( particle.position );
+    particle = new THREE.Sprite( );
+    particle.position.x = 16000; particle.position.y = 0; particle.position.z = 16000;
+    lines_geometry_3.vertices.push( particle.position );
+    particle = new THREE.Sprite( );
+    particle.position.x = -16000; particle.position.y = 0; particle.position.z = 16000;
+    lines_geometry_3.vertices.push( particle.position );
+    particle = new THREE.Sprite( );
+    particle.position.x = -16000; particle.position.y = 0; particle.position.z = -16000;
+    lines_geometry_3.vertices.push( particle.position );
+    line_labels_3 = new THREE.Line( lines_geometry_3, new THREE.LineBasicMaterial( { color: 0x0000ff, opacity: 0.2 } ) );
+            line_labels_3.rotation.z = 57.0/180.0*Math.PI;//7.0;
+    //        line_labels_3.rotation.z = -100.0/180.0*Math.PI;//7.0;
+    group_rest.add( line_labels_3 );    
+
+    var obj_mw_t = new THREE.Object3D();
+    obj_mw_t_2 = new THREE.Object3D();
+    var mesh_t   = new THREEx.Text('               Milky Way', {
+      font        : "droid serif",
+      weight      : "bold",
+      size        : 1000,
+      height      : 0.4,
+    })
+    obj_mw_t.add(mesh_t);
+    obj_mw_t.position.y = 1000;
+    obj_mw_t.position.z = -16000.0;
+    obj_mw_t_2.add(obj_mw_t);
+            //obj_mw_t_2.rotation.x = -0.7;
+            obj_mw_t_2.rotation.z = 57.0/180.0*Math.PI;
+            group_rest.add(obj_mw_t_2);
+          }
+        }    
+
+        function init_3d() {
+
+        MM_animate_phase = 0;//document.getElementById('INPUT_START_TIME').value;
+        MM_render_mode = 0;
+
+
+        container = document.getElementById( 'div_mode_view_3d' );
+
+        camera = new THREE.PerspectiveCamera( 90, window.innerWidth / window.innerHeight, 0.005, 250000 );
+        camera.position.z = 30;
+
+        scene = new THREE.Scene();
+
+
+        group = new THREE.Object3D();
+        scene.add( group);
+
+        group_rest = new THREE.Object3D();
+        group.add( group_rest);
+
+        group_orbit = new THREE.Object3D();
+        scene.add( group_orbit);
+
+
+        obj_sky = new THREE.Object3D();
+        group_rest.add( obj_sky );
+
+        add_labels();        
+
+        ajaxDataOrbit();
+
+        var mapA = THREE.ImageUtils.loadTexture( "img/gamma_2.png");
+        var materialC = new THREE.SpriteMaterial( { map: mapA, color: 0xffffff, fog: true } );
+        var sprite = new THREE.Sprite( materialC );
+        sprite.position.set( 16000, 1000, 0 );
+        sprite.scale.x = 1000;
+        sprite.scale.y = 1000;
+        sprite.scale.z = 1000;
+        obj_gamma = new THREE.Object3D();
+        obj_gamma.add( sprite );
+
+        obj_sattelite = new THREE.Object3D();
+        group_orbit.add( obj_sattelite );
+        var mapA = THREE.ImageUtils.loadTexture( "img/MM_2.png");
+        var materialC = new THREE.SpriteMaterial( { map: mapA, color: 0xffffff, fog: true } );
+        var sprite = new THREE.Sprite( materialC );
+        sprite.scale.x = 3;
+        sprite.scale.y = 3;
+        sprite.scale.z = 3;
+        obj_sattelite.add( sprite );
+
+
+        obj_sun = new THREE.Object3D();
+        group_rest.add( obj_sun );
+        var mapA = THREE.ImageUtils.loadTexture( "img/sun_alpha_3.png");
+        var materialC = new THREE.SpriteMaterial( { map: mapA, color: 0xffff00, fog: true } );
+        var sprite = new THREE.Sprite( materialC );
+        sprite.scale.x = 2500;
+        sprite.scale.y = 2500;
+        sprite.scale.z = 2500;
+        obj_sun.add( sprite );
+
+        obj_l2 = new THREE.Object3D();
+        group_rest.add( obj_l2 );
+
+        var geometry = new THREE.SphereGeometry( 0.2, 20, 20 );
+        var material = new THREE.MeshBasicMaterial( { color: 0x00ff00, opacity: 0.2 } );
+        var mesh = new THREE.Mesh( geometry, material );
+        obj_l2.add( mesh );
+
+        obj_l2_t = new THREE.Object3D();
+        var mesh_t   = new THREEx.Text('L2', {
+          font        : "droid serif",
+          weight      : "bold",
+          size        : 1,
+          height      : 0.4,
+        })
+        obj_l2_t.add(mesh_t);
+        obj_l2_t.position.y = 0.8;
+        obj_l2.add(obj_l2_t);
+
+
+        var loader = new THREE.TextureLoader();
+        loader.load( 'img/nebo5.jpg', function ( texture ) {
+          var geometry = new THREE.SphereGeometry( 230000, 25, 25);
+          var material = new THREE.MeshBasicMaterial( { map: texture, overdraw: true } );
+          var mesh = new THREE.Mesh( geometry, material );
+          obj_sky.add( mesh );
+          mesh.scale.x = -1;
+
+          obj_earth = new THREE.Object3D();
+          group_rest.add( obj_earth );
+          var loader = new THREE.TextureLoader();
+          loader.load( 'img/earth4.jpg', function ( texture ) {
+            var geometry = new THREE.SphereGeometry( 1, 20, 20 );
+            var material = new THREE.MeshBasicMaterial( { map: texture, overdraw: true } );
+            var mesh = new THREE.Mesh( geometry, material );
+            obj_earth.add( mesh );
+
+
+            obj_moon = new THREE.Object3D();
+            group_rest.add( obj_moon );
+            var loader = new THREE.TextureLoader();
+            loader.load( 'img/moon.jpg', function ( texture ) {
+              var geometry = new THREE.SphereGeometry( 0.25, 20, 20 );
+              var material = new THREE.MeshBasicMaterial( { map: texture, overdraw: true } );
+              var mesh = new THREE.Mesh( geometry, material );
+              obj_moon.add( mesh );
+
+              document.getElementById('div_loading').style.display='none';
+              document.getElementById('butt_orb').style.display='block';
+              document.getElementById('butt_labels').style.display='block';
+            } );
+          } );
+        } );
+
+        obj_sky.rotation.y = 180.0/180.0*Math.PI;
+        obj_sky.rotation.z = -57.0/180.0*Math.PI;
+
+        change_time_range();
+//if (window.WebGLRenderingContext)
+renderer = new THREE.WebGLRenderer();
+//else
+  //renderer = new THREE.CanvasRenderer();
+
+  renderer.setClearColor( 0x000000 );
+  renderer.setSize( window.innerWidth, window.innerHeight );
+
+  container.appendChild( renderer.domElement );
+
+  document.getElementById( 'div_mode_view_3d' ).addEventListener( 'mousedown', onDocumentMouseDown, false );
+  document.getElementById( 'div_mode_view_3d' ).addEventListener( 'mousemove', onDocumentMouseMove, false );
+  document.getElementById( 'div_mode_view_3d' ).addEventListener( 'mouseup', onDocumentMouseUp, false );
+  document.getElementById( 'div_mode_view_3d' ).addEventListener( 'mousewheel', onDocumentMouseWheel, false );
+  document.getElementById( 'div_mode_view_3d' ).addEventListener( 'DOMMouseScroll', onDocumentMouseWheel, false );
+
+  document.getElementById( 'div_mode_view_3d' ).addEventListener( 'touchstart', onDocumentTouchStart, false );
+  document.getElementById( 'div_mode_view_3d' ).addEventListener( 'touchmove', onDocumentTouchMove, false );
+
+  window.addEventListener( 'resize', onWindowResize, false );
+
+  scene_model = new THREE.Scene();
+  var light = new THREE.DirectionalLight( 0xefefff, 2 );
+  light.position.set( 1, 1, 1 ).normalize();
+  scene_model.add( light );
+
+  var light = new THREE.DirectionalLight( 0xffefef, 2 );
+  light.position.set( -1, -1, -1 ).normalize();
+  scene_model.add( light );
+
+  var loader = new THREE.JSONLoader( true );
+  loader.load( "horse.js", function( geometry ) {
+  } );
+
+}
+
+
+function onWindowResize() {
+  windowHalfX = window.innerWidth / 2;
+  windowHalfY = window.innerHeight / 2;
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize( window.innerWidth, window.innerHeight );
+}
+
+
+function onDocumentMouseDown( event ) {
+  event.preventDefault();
+  isUserInteracting = true;
+  onPointerDownPointerX = event.clientX;
+  onPointerDownPointerY = event.clientY;
+  onPointerDownLon = lon;
+  onPointerDownLat = lat;
+}
+
+function onDocumentMouseMove( event ) {
+  if ( isUserInteracting === true ) {
+    lon = -( onPointerDownPointerX - event.clientX ) * 0.1 + onPointerDownLon;
+    lat = ( event.clientY - onPointerDownPointerY ) * 0.1 + onPointerDownLat;
+  }
+}
+
+function onDocumentMouseUp( event ) {
+  isUserInteracting = false;
+}
+
+
+function onDocumentMouseWheel( event ) {
+  var delta = 0;
+        if (!event) event = window.event; // Ñîáûòèå IE.
+        // Óñòàíîâèì êðîññáðàóçåðíóþ delta
+        if (event.wheelDelta) {
+          // IE, Opera, safari, chrome - êðàòíîñòü äåëüòà ðàâíà 120
+          delta = event.wheelDelta/120;
+        } else if (event.detail) {
+          // Mozilla, êðàòíîñòü äåëüòà ðàâíà 3
+          delta = -event.detail/3;
+        }
+        if (delta) {
+          // Îòìåíèì òåêóùåå ñîáûòèå - ñîáûòèå ïîóìîë÷àíèþ (ñêðîëèíã îêíà).
+          if (event.preventDefault) {
+            event.preventDefault();
+          }
+            event.returnValue = false; // äëÿ IE
+          }
+
+
+          Z_distanse -= delta * 120 * 0.05;
+          if ((Z_distanse < 70)&&(Z_distanse > 3)){
+          }else{
+            Z_distanse += delta * 120 * 0.05;   
+          }   
+        }
+
+
+        var touch_scale = 1;
+        var touch_stat = 0;
+        var touch_start_Z = 0;
+        var touch_x1_s= 0;
+        var touch_y1_s= 0;
+        var touch_x2_s= 1;
+        var touch_y2_s= 1;
+        var touch_x1_f = 0;  
+        var touch_y1_f = 0;
+        var touch_x2_f = 1;
+        var touch_y2_f = 1;
+        function onDocumentTouchStart( event ) {
+          if ( event.touches.length == 1 ) {
+            event.preventDefault();
+            touch_stat = 0;
+
+            onPointerDownPointerX = event.touches[ 0 ].pageX;
+            onPointerDownPointerY = event.touches[ 0 ].pageY;
+            onPointerDownLon = lon;
+            onPointerDownLat = lat;
+          }
+          if ( event.touches.length == 2 ) {
+            event.preventDefault();
+            touch_start_Z = Z_distanse;
+            touch_stat = 1;
+
+            touch_x1_s = event.touches[ 0 ].pageX;
+            touch_y1_s = event.touches[ 0 ].pageY;
+            touch_x2_s = event.touches[ 1 ].pageX;
+            touch_y2_s = event.touches[ 1 ].pageY;
+
+          }
+        }
+
+        function onDocumentTouchMove( event ) {
+          if ( event.touches.length == 1 ) {
+            event.preventDefault();
+
+            if (touch_stat == 0){
+              lon = -( onPointerDownPointerX - event.touches[0].pageX ) * 0.1 + onPointerDownLon;
+              lat = ( event.touches[0].pageY - onPointerDownPointerY ) * 0.1 + onPointerDownLat;
+            }else{       
+              onPointerDownPointerX = event.touches[ 0 ].pageX;
+              onPointerDownPointerY = event.touches[ 0 ].pageY;
+              onPointerDownLon = lon;
+              onPointerDownLat = lat;
+            }
+            touch_stat = 0;
+          }
+
+          if ( event.touches.length == 2 ) {
+            event.preventDefault();
+            touch_stat = 1;
+
+            touch_x1_f = event.touches[ 0 ].pageX;
+            touch_y1_f = event.touches[ 0 ].pageY;
+            touch_x2_f = event.touches[ 1 ].pageX;
+            touch_y2_f = event.touches[ 1 ].pageY;
+
+            var R1 = Math.sqrt( (touch_x2_s-touch_x1_s)*(touch_x2_s-touch_x1_s)+(touch_y2_s-touch_y1_s)*(touch_y2_s-touch_y1_s));
+            var R2 = Math.sqrt( (touch_x2_f-touch_x1_f)*(touch_x2_f-touch_x1_f)+(touch_y2_f-touch_y1_f)*(touch_y2_f-touch_y1_f));
+            if (R2 > 0){
+              var R_scale = R1 / R2;
+              var Z = touch_start_Z * R_scale;
+              if ((Z < 70)&&(Z > 3)){
+                Z_distanse = Z;
+              }
+            }
+            onPointerDownPointerX = event.touches[ 0 ].pageX;
+            onPointerDownPointerY = event.touches[ 0 ].pageY;
+            onPointerDownLon = lon;
+            onPointerDownLat = lat;
+
+          }
+        }
+
+        function animate() {
+          requestAnimationFrame( animate );
+          render();
+        }
+
+        function render() {
+          lat = Math.max( - 85, Math.min( 85, lat ) );
+          phi = THREE.Math.degToRad( 90 - lat );
+          theta = THREE.Math.degToRad( lon );
+
+          var Sf;
+          var Sun_F0 = -65.0;
+
+          if (MM_orbit_coord == 1){ 
+            group_rest.rotation.x = -23.5/180.0*Math.PI;
+            obj_l2.rotation.x = 23.5/180.0*Math.PI;
+            group_orbit.rotation.x = -23.5/180.0*Math.PI;
+            group.rotation.y = -2.0*Math.PI*(main_Time*1.000 )/(365.2422);
+            obj_l2.rotation.y = 2.0*Math.PI*(main_Time*1.000 )/(365.2422);
+          }else{
+            group_rest.rotation.x = 0;
+            group.rotation.y = 0.0;      
+            group_orbit.rotation.x = 0.0;
+
+            obj_l2.rotation.x = 0;
+            obj_l2.rotation.y = 0;
+          }
+
+          obj_earth.rotation.y += 0.01;
+          obj_moon.rotation.y -= 0.01;
+
+          camera.position.x = Z_distanse * Math.sin( phi ) * Math.cos( theta );
+          camera.position.y = Z_distanse * Math.cos( phi );
+          camera.position.z = Z_distanse * Math.sin( phi ) * Math.sin( theta );
+
+          target.x = 0;
+          target.y = 0;
+          target.z = 0;
+
+          camera.lookAt( target );   
+
+          var t_start = 0;
+          var t_stop = 1500;
+
+          main_Time += 0.1;
+          MM_animate_phase = 0;
+          for ( var i =  t_start; i <  t_stop; i ++ ) {
+            if (MM_orbit[i][0] < main_Time){
+              MM_animate_phase = i;
+            }
+          } 
+          if (main_Time > t_stop){
+            main_Time = t_start;
+          }
+
+          obj_sattelite.rotation.x += 0.05;
+          obj_sattelite.position.x = MM_orbit[Math.floor(MM_animate_phase)][1] / 100000.0;     
+          obj_sattelite.position.y = MM_orbit[Math.floor(MM_animate_phase)][3] / 100000.0;     
+          obj_sattelite.position.z = MM_orbit[Math.floor(MM_animate_phase)][2] / 100000.0;     
+
+          Sf = 2.0*Math.PI*(main_Time*1.000 + Sun_F0)/(365.2422);
+          Sf = Sf - ( Math.floor(Sf / (2.0*Math.PI) ) * (2.0*Math.PI) );
+          SunX = - 1.0*Math.cos(Sf)*Math.cos(23.5/180.0*Math.PI);
+          SunZ = 1.0*Math.sin(Sf)*Math.cos(23.5/180.0*Math.PI);
+          SunY = 1.0*Math.sin(23.5/180.0*Math.PI)*Math.sin(Sf);
+          obj_sun.position.x = SunX*10000.00; 
+          obj_sun.position.y = -SunY*10000.00; 
+          obj_sun.position.z = SunZ*10000.00; 
+
+          Sf = 2.0*Math.PI*(main_Time*1.000 + Sun_F0 + 365.2422/2.0)/(365.2422);
+          Sf = Sf - ( Math.floor(Sf / (2.0*Math.PI) ) * (2.0*Math.PI) );
+          SunX = - 1.0*Math.cos(Sf)*Math.cos(23.5/180.0*Math.PI);
+          SunZ = 1.0*Math.sin(Sf)*Math.cos(23.5/180.0*Math.PI);
+          SunY = 1.0*Math.sin(23.5/180.0*Math.PI)*Math.sin(Sf);
+          obj_l2.position.x = SunX*15;
+          obj_l2.position.y = -SunY*15;
+          obj_l2.position.z = SunZ*15;
+
+
+          var Moon_F0 = 0;
+          Sf = 2.0*Math.PI*(main_Time*1.000 + Moon_F0)/(365.2422)*12;
+          Sf = Sf - ( Math.floor(Sf / (2.0*Math.PI) ) * (2.0*Math.PI) );
+          SunX = - 1.0*Math.cos(Sf)*Math.cos(23.5/180.0*Math.PI);
+          SunZ = 1.0*Math.sin(Sf)*Math.cos(23.5/180.0*Math.PI);
+          SunY = 1.0*Math.sin(23.5/180.0*Math.PI)*Math.sin(Sf);
+          obj_moon.position.x = SunX*2.0; 
+          obj_moon.position.y = -SunY*2.0; 
+          obj_moon.position.z = SunZ*2.0; 
+
+          if (MM_render_mode == 0){
+            renderer.render( scene, camera );
+          }else{
+            renderer.render( scene_model, camera );       
+          }
+        }
+
+        function resize_3d() {
+          renderer.setSize( window.innerWidth, window.innerHeight);
+        }
+
+        initialize();
+
+      </script>
+      </html>
